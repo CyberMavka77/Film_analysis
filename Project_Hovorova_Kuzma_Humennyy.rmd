@@ -1,0 +1,275 @@
+---
+title: "ResearchProject"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+Team members: Vladyslav Humennyy, Volodymyr Kuzma, Svitlana Hovorova.
+
+# The Films Research
+
+We chose a dataset from TMDb, containing various information on films from 1880 to 2022 to explore more about the changes that happened to film industry through the years and analyse these **3 main factors:**
+
+**1)** The average film duration: we suggest that as time goes films become shorter. H0: on average, the duration of films decreases by 0%; H1: the difference is present. We are also interested in testing this metric in different film categories;
+
+**2)** The quantities of films of different categories produced: we want to analyze the popularity of genres in general, and dynamics for particular genres through years;
+
+**3)** The age of leading actors: we assume that in the more recent works, actors are younger. H0: on average, the age of leading actors decreases by 0 years every ten years; H1: the metric is greater;
+
+```{r}
+# Needed library
+library(BSDA)
+
+# Reading the data from data set
+df = read.csv("TMDb_Dataset.csv")
+```
+
+## Hypothesis 1: Film Duration
+
+In this part we will take into consideration only films released after 1950, as before that the industry was not really developed and the number of films is not significant.
+
+Here, we test whether the film duration over time actual decreased. The first try was to build a linear regression model of mean film duration over time. **The reason for it is that the linear model can clearly show whether the relation is increasing or decreasing.** We took 5 years periods and built a relation of mean film duration in these periods to the year of film release (for a period of 5 years we took the middle of this period).
+
+```{r}
+Years = seq(1950,2015,length = 14)
+
+Runtimes = c()
+for (year in Years) {
+  runtime = mean(df[strtoi(substring(df$Date, 0, 4)) >= year & 
+                   strtoi(substring(df$Date, 0, 4)) < year+5, ]$Runtime)
+  Runtimes = append(Runtimes, runtime)
+}
+
+Years = Years + 2.5
+regressional_model = lm(Runtimes~Years)
+plot(Years, Runtimes, col = "blue", main = "Mean film duration over years")
+abline(regressional_model, col = "red")
+summary(regressional_model)
+```
+
+The p-value in the test of slope coefficient is hardly bigger than 0.05. The model here states that our starting assumption is wrong: movies are getting longer. **Nevertheless, the main problem is that real relation is far from linear, so we can not make any conclusions here**.
+
+##### Here you can also see such linear models for different categories of films
+
+```{r}
+Categories = c("Crime", "Comedy", "Action", "Thriller", "Adventure", "Science Fiction", "Drama", "Romance")
+  
+for (category in Categories) {
+  Years = seq(1950,2015,length = 14)
+  temp_df = df[grepl(category, df$Categories), ]
+  
+  Runtimes = c()
+  for (year in Years) {
+    runtime = mean(temp_df[strtoi(substring(temp_df$Date, 0, 4)) >= year & 
+                   strtoi(substring(temp_df$Date, 0, 4)) < year+5, ]$Runtime)
+    Runtimes = append(Runtimes, runtime)
+}
+  
+  Years = Years + 2.5
+  regressional_model = lm(Runtimes~Years)
+  plot(Years, Runtimes, col = "blue", main = category)
+  abline(regressional_model, col = "red")
+  
+  
+  cat("Summary for", category)
+  print(summary(regressional_model))
+}
+```
+
+The directions of lines for different categories vary significantly, though for some of them the p-value of the testing of slope coefficient is to low to build conclusions based on this estimate.
+
+Though in most cases the p-values for the slope coef. are high, the shown linear graphs **do not realistically represent the relation**, so we decided to **do another test** of the hypothesis and use another simpler yet more accurate method: **divide the films into two categories: those released before 2001 (in the 20th century) and those released after (in the 21st century)**, and then use **t-test** (as we do not have information on the variance) to test $H_0:\mu_{before}=\mu_{after}$ against $H_1:\mu_{before} <\mu_{after}$.
+
+```{r}
+duration_21 = df[strtoi(substring(df$Date, 0, 4)) >= 2001,]$Runtime
+duration_20 = df[strtoi(substring(df$Date, 0, 4)) < 2001 & strtoi(substring(df$Date, 0, 4)) >= 1950,]$Runtime
+
+t.test(duration_20, duration_21, alternative = "g")
+t.test(duration_20, duration_21, alternative = "l")
+```
+
+The results are completely opposite to what we expected: the mean duration of movie is significantly bigger in the new century.
+
+##### Here you can also see test results for different categories of films
+
+```{r}
+for (category in Categories) {
+  temp_df = df[grepl(category, df$Categories), ]
+  
+  duration_21 = df[strtoi(substring(temp_df$Date, 0, 4)) >= 2001,]$Runtime
+  duration_20 = df[strtoi(substring(temp_df$Date, 0, 4)) < 2001 & strtoi(substring(temp_df$Date, 0, 4)) >= 1950,]$Runtime
+
+  cat('Tests for', category)
+  print(t.test(duration_20, duration_21, alternative = "g"))
+  print(t.test(duration_20, duration_21, alternative = "l"))
+}
+```
+
+As we see, the only category in which the duration decreased as we expected is **Adventure films** as the p-value of the test, where the $H_1$ is that the duration decreased, is very low, meaning that we should reject $H_0$.
+
+**Overall**, in this part we took a chance to use linear regression and t-test to find out that the duration of films actually did not decrease from the previous century's last decades.\
+**Now, let's move to the second hypothesis**
+
+## Part 2: here we want to analyze different film categories and see how their popularities are distributed
+
+Firstly, that's the quantities of all films from dataframe corresponding to the genre:
+
+```{r}
+Categories = c("Crime", "Comedy", "Action", "Thriller", "Adventure", "Science Fiction", "Drama", "Romance")
+categories_vec <- c()
+for (category in Categories){
+  for (row in df$Categories){
+    if (grepl(category, row)){
+      categories_vec = append(categories_vec, category)
+    }
+  }
+}
+categories_counts <- as.data.frame(table(categories_vec))
+categories_counts
+barplot(categories_counts$Freq, main = "Number of films", names = categories_counts$categories_vec)
+```
+
+Let's now see how popularit of different genres changed over years (xlab depicts the year when there was the biggest number of films of such category produced)
+
+```{r}
+
+years <- strtrim(df$Date, 4)
+years <- sort(union(years, years))
+popularity_df <- data.frame(years)
+for (category in Categories){
+  popularity_df[category] <- 0
+}
+for (category in Categories){
+  curr_df <- df[grepl(category, df$Categories),]
+  years <- strtrim(curr_df$Date, 4)
+  curr_counts <- as.data.frame(table(years))
+  most_prod_y <- curr_counts[curr_counts$Freq == max(curr_counts$Freq),]$years
+  barplot(curr_counts$Freq,main=category, xlab = most_prod_y)
+}
+
+```
+
+As plots show, there just was growth in number of films present, and it also is not linear. So, roughly speaking, there is no particular trend in in genres preferences of producers changes: the years with the biggest number of films is 2009 +- 1 year for all the categories.
+
+## Hypothesis 3: Age of Leading Actors
+
+In that hypothesis we test the relation between the year of production and the age of leading actor. In our hypothesis we expect, that in older films actors were more mature than in more recent ones. For that we would combine the data from .csv file, that was used in previous tests, and from file Birth_Actors.csv, which has the data about dates of birth of actors. At first we import that file and store its data in dataframe.
+
+```{r}
+# Read the data from data set about year of birth of actors
+dob_df = read.csv("Birth_Actors.csv")
+```
+
+Here we create the test for ages of actors over years. But besides general age of all leading actors, we would divide male and female actors to plot them at the same graph and see how their mean ages differ. After plotting the information we show the summary of linear models for our results.
+
+```{r}
+age_of_actors_function <- function(start_of_period, end_of_period, step){
+  number_of_period = ((end_of_period - start_of_period) / step) + 1
+
+  Years = seq(start_of_period,end_of_period,length = number_of_period)
+  
+  print(Years)
+  
+  Ages = c()
+  MaleAges = c()
+  FemaleAges = c()
+  for (year in Years) {
+    year_ages = c()
+    cast_of_films = df[strtoi(substring(df$Date, 0, 4)) >= year & 
+                     strtoi(substring(df$Date, 0, 4)) < year+step, ]$Cast
+    
+    number_of_actors = 0
+    age_of_actors = 0
+    number_of_male_actors = 0
+    age_of_male_actors = 0
+    number_of_female_actors = 0
+    age_of_female_actors = 0
+    
+    for (cast in cast_of_films){
+      start_index = unlist(gregexpr("id': ", cast))[1]
+      id_with_junk = substr(cast, start_index + 5, start_index + 12)
+      id = strtoi(substr(id_with_junk, 1, unlist(gregexpr(",", id_with_junk))[1] - 1))
+      gender_start_index = unlist(gregexpr("gender': ", cast))[1]
+      gender = strtoi(substr(cast, gender_start_index + 9, gender_start_index + 9))
+      row = which(grepl(id, dob_df$Id))[1]
+      if (!is.na(row)){
+        if (gender == 2){
+            number_of_male_actors = number_of_male_actors + 1
+            age_of_male_actors = age_of_male_actors + (year - strtoi(dob_df$Birth[row]))
+        }
+        else{
+            number_of_female_actors = number_of_female_actors + 1
+            age_of_female_actors = age_of_female_actors + (year - strtoi(dob_df$Birth[row]))
+        }
+        number_of_actors = number_of_actors + 1
+        age_of_actors = age_of_actors + (year - strtoi(dob_df$Birth[row]))
+      }
+    }
+    
+    Ages = append(Ages, age_of_actors / number_of_actors)
+    MaleAges = append(MaleAges, age_of_male_actors / number_of_male_actors)
+    FemaleAges = append(FemaleAges, age_of_female_actors / number_of_female_actors)
+    #cat("=============================================================================================\n")
+    #cat("For year ", year, " the average actor age is ", age_of_actors / number_of_actors, "\n")
+    #cat("For year ", year, " the average male actor age is ", age_of_male_actors / number_of_male_actors, "\n")
+    #cat("For year ", year, " the average female actor age is ", age_of_female_actors / number_of_female_actors, "\n")
+  }
+  
+  
+  plot(Years, MaleAges, col = "blue", main = paste("Mean Age of Leading Male and Female Actor between ", toString(start_of_period), " and ", toString(end_of_period)), ylim = c(25,45))
+  points(Years, FemaleAges, col = "purple")
+  
+  regressional_model_male = lm(MaleAges~Years)
+  regressional_model_female = lm(FemaleAges~Years)
+  abline(regressional_model_male, col = "blue")
+  abline(regressional_model_female, col = "purple")
+  print(summary(regressional_model_male))
+  print(summary(regressional_model_female))
+  
+  plot(Years, Ages, col="blue", main = paste("Mean Age of Leading Actor between ", toString(start_of_period), " and ", toString(end_of_period)))
+  
+  regressional_model = lm(Ages~Years)
+  abline(regressional_model, col = "red")
+  print(summary(regressional_model))
+}
+```
+
+Here, we test whether the age of leading actor over time actualy decreased. We build the linear model for films from 1950 to 2015 with a period of 5 years. The reason to limit our data set to such year is because of development of industry, which was high enough only in 50's. We took 5 years periods and built a relation of mean age of actor in these periods to the year of film release (for a period of 5 years we took the middle of this period).
+
+```{r}
+age_of_actors_function(1950, 2015, 5)
+```
+
+From the data that we can see at our plots and summaries of linear models we can assume, that there is linear dependency between the year of production and the age of leading actor. But, surprisingly, it is the opposite to the one, that was predicted before the experiment. We can see, that the relation between the year of production and the age is straight, in contrast to our hypothesis. Also, we have p-value less than 0.05 for linear model, which is very good statistics and we should stick to it.
+
+Besides, the plot of male and female ages shows, that they behave very similar to general trend. But there is one interesting, though predictable, detail - difference between mean ages for same periods is **more than 5 years** in average. The reason for it -- **SOCIETY!**
+
+Now we would test the 20th (1950 to 1999) and 21st (2000 to 2015) centuries of film industries and their year to age relation.
+
+The first test would be for 20th century.
+
+```{r}
+age_of_actors_function(1955, 1999, 1)
+```
+
+At that period we can see, that we have slight decrease in the mean age of male actors towards the end of century, though the average age of female actresses a little increased. But both changes are insignificant. We bound that with the high flow of actors in the industry due to the rapid growth of it in that period. And because of it we have the mean value very similar at the whole period.
+
+```{r}
+age_of_actors_function(2000, 2015, 1)
+```
+
+For the 21st century we see the most 'linear' graphs. P-values of all our graphs are very-very small. In fact, they are almost perfect and from the result of our linear model we can say, that there is indeed the relation between age and year. In recent years mean age spiked in comparison to previous decades. There may be several reasons for that: demand on older actors, lack of actor flow (stars occupy their places for years) general aging of people in that industry.
+
+## Conclusions
+
+In that research, we studied the data about the film industry at very long period (almost from the start of its development). We started our research with a view at the movies and statistics, which was a bit different from reality. All our initial hypotheses were opposite to the actual data, which is a very cool result in fact.
+
+With the help of statistics, we found the truth about average film length, which did not decrease with the flow of time.
+
+After researching distributions of different genres, we concluded that there was no clear relationship between some periods and the popularity of specific categories of films.
+
+In the end, we found that the mean age of the leading actor increases over time. To our surprise, youngsters are not that common lead actors, as there is a growing demand for older actors. We can say that people love some actors and stick to them for a long time.
+
+The whole project was a fun and cool test for our statistics knowledge and skills. So, on behalf of our team, thank you for reading our document.
